@@ -89,6 +89,17 @@ module WinFormsBinding =
 
     let bindControl bi = createBinding bi |> ignore
 
+    let validationConvert (errorProvider: ErrorProvider option) toSource toView (bindingInfo: BindingInfo<_,_,_>) =
+        let onError =
+            match errorProvider with
+            | Some ep -> (fun err ->
+                let errMsg =
+                    match err with
+                    | Some e -> e.ToString()
+                    | None -> ""
+                ep.SetError(bindingInfo.Control, errMsg))
+            | None -> ignore
+        CommonBinding.validationConvert onError toSource toView None bindingInfo
 
 /// Helpers for setting the DataSource of ListControls
 module ListSource =
@@ -136,6 +147,8 @@ module Bind =
 
 [<Extension>]
 type BindPartExtensions =
+    // two way
+
     /// Create a two-way binding between control and model properties of the same type.
     [<Extension>]
     static member toModel (view: BindViewPart<Control, 'a>, modelProperty: Expr<'a>, ?sourceUpdateMode) =
@@ -170,6 +183,19 @@ type BindPartExtensions =
     static member toModel (view: BindViewPart<Control, string>, modelProperty: Expr<string option>, ?sourceUpdateMode) =
         view.toModel(modelProperty, BindingConvert.toStringOption, BindingConvert.fromStringOption, ?sourceUpdateMode = sourceUpdateMode)
 
+    /// Create a two-way binding between control and model properties of different types with validation.
+    [<Extension>]
+    static member toModelResult (view: BindViewPart<Control, _>, modelProperty, toModelValidator, toView, ?errorProvider, ?sourceUpdateMode) =
+        CommonBinding.fromParts view (CommonBinding.modelPart modelProperty) (TwoWay sourceUpdateMode)
+        |> WinFormsBinding.validationConvert errorProvider toModelValidator (Some toView)
+        |> CommonBinding.createProxy WinFormsBinding.bindControl
+
+    /// Create a two-way binding between control and model properties of the same type with validation.
+    [<Extension>]
+    static member toModelResult (view: BindViewPart<Control, _>, modelProperty, toModelValidator, ?errorProvider, ?sourceUpdateMode) =
+        view.toModelResult(modelProperty, toModelValidator, id, ?errorProvider = errorProvider, ?sourceUpdateMode = sourceUpdateMode)
+
+    // one way to model
 
     /// Create a one-way binding from a control property to a model property of the same type.
     [<Extension>]
@@ -205,6 +231,14 @@ type BindPartExtensions =
     static member toModelOneWay (view: BindViewPart<Control, obj>, modelProperty: Expr<'a>, ?sourceUpdateMode) =
         view.toModelOneWay(modelProperty, BindingConvert.objToOption (), ?sourceUpdateMode = sourceUpdateMode)
 
+    /// Create a one-way binding from a control property to a model property of a different type with validation.
+    [<Extension>]
+    static member toModelResultOneWay (view: BindViewPart<Control, _>, modelProperty, toModelValidator, ?errorProvider, ?sourceUpdateMode) =
+        CommonBinding.fromParts view (CommonBinding.modelPart modelProperty) (OneWayToModel sourceUpdateMode)
+        |> WinFormsBinding.validationConvert errorProvider toModelValidator None
+        |> CommonBinding.createProxy WinFormsBinding.bindControl
+
+    // one way to view
 
     /// Create a one-way binding from a model property to a control property of the same type.
     [<Extension>]
@@ -240,6 +274,7 @@ type BindPartExtensions =
     static member toViewOneWay (source: BindSourcePart<'a>, viewProperty: Expr<obj>) =
         source.toViewOneWay(viewProperty, BindingConvert.objFromOption ())
 
+    // source to callback
 
     /// Create a one-way binding from a model property to a function call that updates the view.
     [<Extension>]
